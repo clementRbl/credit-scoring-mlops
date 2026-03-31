@@ -45,8 +45,6 @@ jobs:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
           git lfs install
-          git lfs track "data/processed/*.parquet"
-          git add .gitattributes
-          git -c user.name="CI" -c user.email="ci@deploy" commit -m "lfs: track parquet files" --allow-empty
+          git lfs migrate import --include="data/processed/*.parquet" --everything
           git remote add hf https://ClementRbl:$HF_TOKEN@huggingface.co/spaces/ClementRbl/credit-scoring-api || true
           git push hf main --force
