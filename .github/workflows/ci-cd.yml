@@ -45,6 +45,6 @@ jobs:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
           git lfs install
-          git lfs migrate import --include="data/processed/*.parquet" --everything
+          git lfs migrate import --include="*.parquet,*.pkl" --everything
           git remote add hf https://ClementRbl:$HF_TOKEN@huggingface.co/spaces/ClementRbl/credit-scoring-api || true
           git push hf main --force
