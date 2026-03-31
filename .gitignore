@@ -1,5 +1,7 @@
 # Data
-data/
+data/*
+!data/processed/
+data/processed/train_merged.parquet
 
 # Logs
 logs/
