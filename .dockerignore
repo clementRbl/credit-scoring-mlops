@@ -1,0 +1,13 @@
+.venv/
+.git/
+.vscode/
+.pytest_cache/
+__pycache__/
+tests/
+docs/
+logs/
+*.pyc
+.pre-commit-config.yaml
+.gitignore
+ruff.toml
+README.md
