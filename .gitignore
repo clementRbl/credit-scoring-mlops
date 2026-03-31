@@ -1,0 +1,26 @@
+# Data
+data/
+
+# Logs
+logs/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+
+# Evidently
+*.html
+
+# Docs internes (non demandés)
+docs/PLAN.md
+docs/ARCHITECTURE.md
+docs/CONSIGNES.md
