@@ -36,8 +36,9 @@ left, right = st.columns(2)
 
 with left:
     st.subheader("Distribution des scores prédits")
-    chart_data = pd.cut(df["probability"], bins=20).value_counts().sort_index()
-    st.bar_chart(chart_data)
+    hist_data = df["probability"].value_counts(bins=20).sort_index()
+    hist_data.index = [f"{i.mid:.2f}" for i in hist_data.index]
+    st.bar_chart(hist_data)
 
 with right:
     st.subheader("Répartition des décisions")
