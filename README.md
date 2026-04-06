@@ -47,6 +47,27 @@ Le dashboard Streamlit visualise les métriques de production :
 streamlit run dashboard.py
 ```
 
+## Stockage des données de production
+
+**Stratégie** : logging structuré JSON (fichier JSONL local).
+
+Chaque appel à l'API enregistre automatiquement dans `logs/predictions.jsonl` :
+- `timestamp` : date/heure de la requête
+- `SK_ID_CURR` : identifiant du client
+- `probability` : score de probabilité de défaut
+- `decision` : ACCORDE ou REFUSE
+- `inference_time_ms` : temps d'inférence en millisecondes
+
+Ce format permet :
+- L'analyse de drift (comparaison des distributions de scores)
+- Le suivi de la latence et des performances
+- La détection d'anomalies (taux de refus, temps de réponse)
+
+Screenshots de la solution :
+
+![Logs JSONL](screenshots/logs_jsonl.png)
+![Dashboard Streamlit](screenshots/dashboard_streamlit.png)
+
 ## Optimisation
 
 Le classifieur LightGBM a été converti en ONNX Runtime :
