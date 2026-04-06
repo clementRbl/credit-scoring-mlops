@@ -35,15 +35,35 @@ uvicorn app:app --host 0.0.0.0 --port 8000
 pytest tests/ -v --cov=app
 ```
 
+## Monitoring
+
+L'API log chaque prédiction en JSON structuré dans `logs/predictions.jsonl` :
+- timestamp, SK_ID_CURR, probabilité, décision, temps d'inférence
+
+L'analyse de drift est dans `notebooks/data_drift_analysis.ipynb` (Evidently AI).
+
+Le dashboard Streamlit visualise les métriques de production :
+```bash
+streamlit run dashboard.py
+```
+
+## Optimisation
+
+Le classifieur LightGBM a été converti en ONNX Runtime :
+- Taille modèle : 732 KB → 444 KB (-39%)
+- Temps d'inférence : ~5.6 ms → ~5.3 ms (+6%)
+
 ## Structure du projet
 
 ```
-├── app.py                # API FastAPI
+├── app.py                # API FastAPI (ONNX)
+├── dashboard.py          # Dashboard Streamlit
 ├── src/preprocessing.py  # Preprocessing du modèle
-├── tests/                # Tests unitaires
-├── model/                # Modèle sérialisé (.pkl)
+├── tests/                # Tests unitaires (98% coverage)
+├── model/                # model.pkl + model.onnx
 ├── data/processed/       # Données clients
-├── logs/                 # Logs de prédiction (JSON)
+├── notebooks/            # Analyse data drift
+├── logs/                 # Logs de prédiction (JSONL)
 ├── Dockerfile
 ├── requirements.txt
 └── .github/workflows/    # Pipeline CI/CD
