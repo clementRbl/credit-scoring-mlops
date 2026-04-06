@@ -66,7 +66,8 @@ Ce format permet :
 Screenshots de la solution :
 
 ![Logs JSONL](screenshots/logs_jsonl.png)
-![Dashboard Streamlit](screenshots/dashboard_streamlit.png)
+![Dashboard Streamlit](screenshots/dashboard_streamlit_1.png)
+![Dashboard Streamlit](screenshots/dashboard_streamlit_2.png)
 
 ## Optimisation
 
