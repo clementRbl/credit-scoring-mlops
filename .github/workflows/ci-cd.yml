@@ -45,6 +45,7 @@ jobs:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
           git lfs install
+          git filter-branch --force --index-filter 'git rm --cached --ignore-unmatch model/model.onnx' --prune-empty -- --all
           git lfs migrate import --include="*.parquet,*.pkl,*.png" --everything
           git remote add hf https://ClementRbl:$HF_TOKEN@huggingface.co/spaces/ClementRbl/credit-scoring-api || true
           git push hf main --force
