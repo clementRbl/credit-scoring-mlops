@@ -4,12 +4,9 @@ import pickle
 import time
 from pathlib import Path
 
-import numpy as np
-import onnxruntime as ort
 import pandas as pd
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from scipy.sparse import issparse
 
 # --- Logging structuré JSON ---
 logger = logging.getLogger("api")
@@ -23,7 +20,6 @@ logger.addHandler(file_handler)
 
 # --- Chargement modèle et données au démarrage ---
 MODEL_PATH = Path("model/model.pkl")
-ONNX_PATH = Path("model/model.onnx")
 DATA_PATH = Path("data/processed/test_merged.parquet")
 THRESHOLD = 0.47
 
@@ -35,14 +31,10 @@ classifier = model.named_steps["classifier"]
 if hasattr(classifier, "set_params"):
     classifier.set_params(device="cpu")
 
-# Récupérer les features et le preprocessor
+# Récupérer les features
 preprocessor = model.named_steps["preprocessor"]
 ct = preprocessor.named_steps["column_transformer"]
 FEATURES = list(ct.transformers_[0][2]) + list(ct.transformers_[1][2])
-
-# Charger la session ONNX optimisée
-onnx_session = ort.InferenceSession(str(ONNX_PATH))
-onnx_input_name = onnx_session.get_inputs()[0].name
 
 # Charger les données clients
 clients_df = pd.read_parquet(DATA_PATH)
@@ -72,12 +64,8 @@ def predict(SK_ID_CURR: int):
     client_data = clients_df.loc[[SK_ID_CURR], FEATURES]
 
     start = time.time()
-    # Preprocessing sklearn + inférence ONNX
-    X_processed = preprocessor.transform(client_data)
-    if issparse(X_processed):
-        X_processed = X_processed.toarray()
-    X_float = np.array(X_processed, dtype=np.float32)
-    proba = float(onnx_session.run(None, {onnx_input_name: X_float})[1][0][1])
+    # Inférence directe via le pipeline sklearn
+    proba = float(model.predict_proba(client_data)[:, 1][0])
     inference_time_ms = (time.time() - start) * 1000
 
     decision = "REFUSE" if proba >= THRESHOLD else "ACCORDE"
