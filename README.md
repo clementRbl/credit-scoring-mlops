@@ -71,18 +71,16 @@ Screenshots de la solution :
 
 ## Optimisation
 
-Le classifieur LightGBM a été converti en ONNX Runtime :
-- Taille modèle : 732 KB → 444 KB (-39%)
-- Temps d'inférence : ~5.6 ms → ~5.3 ms (+6%)
+ONNX Runtime a été testé (+6% vitesse, -39% taille) mais retiré volontairement : le risque d'erreurs silencieuses sur les features catégorielles ne justifiait pas le gain marginal. L'API utilise directement `pipeline.predict_proba()` pour une inférence fiable (~6 ms).
 
 ## Structure du projet
 
 ```
-├── app.py                # API FastAPI (ONNX)
+├── app.py                # API FastAPI (LightGBM)
 ├── dashboard.py          # Dashboard Streamlit
 ├── src/preprocessing.py  # Preprocessing du modèle
 ├── tests/                # Tests unitaires (98% coverage)
-├── model/                # model.pkl + model.onnx
+├── model/                # model.pkl
 ├── data/processed/       # Données clients
 ├── notebooks/            # Analyse data drift
 ├── logs/                 # Logs de prédiction (JSONL)
