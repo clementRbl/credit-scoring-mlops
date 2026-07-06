@@ -5,8 +5,13 @@ import time
 from pathlib import Path
 
 import pandas as pd
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 
 # --- Logging structuré JSON ---
 logger = logging.getLogger("api")
@@ -43,6 +48,44 @@ clients_df = clients_df.set_index("SK_ID_CURR")
 # --- API ---
 app = FastAPI(title="Credit Scoring API", version="1.0.0")
 
+# --- Rate limiting (protège le compute HF d'une boucle abusive) ---
+limiter = Limiter(key_func=get_remote_address, default_limits=["60/minute"])
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+# --- CORS restreint (au lieu de "*") : n'autoriser que les origines connues ---
+ALLOWED_ORIGINS = [
+    "https://clement-reboul.fr",
+    "https://clementrbl.github.io",
+]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=ALLOWED_ORIGINS,
+    allow_methods=["GET", "POST"],
+    allow_headers=["*"],
+)
+
+
+# --- En-têtes de sécurité + masquage de la bannière serveur ---
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["Content-Security-Policy"] = "default-src 'none'; frame-ancestors 'none'"
+    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    if "server" in response.headers:
+        del response.headers["server"]  # ne pas exposer "uvicorn"
+    return response
+
+
+# --- Handler d'erreur générique : aucune stacktrace ne fuit en prod ---
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    logger.error(json.dumps({"event": "unhandled_error", "path": str(request.url.path)}))
+    return JSONResponse(status_code=500, content={"detail": "Erreur interne"})
+
 
 class PredictionResponse(BaseModel):
     SK_ID_CURR: int
@@ -57,7 +100,8 @@ def health():
 
 
 @app.post("/predict", response_model=PredictionResponse)
-def predict(SK_ID_CURR: int):
+@limiter.limit("20/minute")
+def predict(request: Request, SK_ID_CURR: int):
     if SK_ID_CURR not in clients_df.index:
         raise HTTPException(status_code=404, detail=f"Client {SK_ID_CURR} non trouvé")
 
