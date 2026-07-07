@@ -73,7 +73,21 @@ async def security_headers(request: Request, call_next):
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "no-referrer"
-    response.headers["Content-Security-Policy"] = "default-src 'none'; frame-ancestors 'none'"
+    # Swagger UI (/docs) et ReDoc (/redoc) chargent leurs assets depuis un CDN :
+    # une CSP "default-src 'none'" les casse (page blanche). On l'allège pour ces pages,
+    # et on garde la CSP verrouillée pour les endpoints API/données.
+    path = request.url.path
+    if path.startswith("/docs") or path.startswith("/redoc"):
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; "
+            "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+            "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+            "img-src 'self' data: https://fastapi.tiangolo.com; "
+            "worker-src 'self' blob:; "
+            "frame-ancestors 'none'"
+        )
+    else:
+        response.headers["Content-Security-Policy"] = "default-src 'none'; frame-ancestors 'none'"
     response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     if "server" in response.headers:
         del response.headers["server"]  # ne pas exposer "uvicorn"
