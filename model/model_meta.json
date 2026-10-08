@@ -1,0 +1,9 @@
+{
+  "model_version": 1,
+  "threshold": 0.5,
+  "training_rows": 184506,
+  "metrics": {
+    "frozen_test_auc": 0.7783,
+    "frozen_test_cost_per_client": 0.4981
+  }
+}
