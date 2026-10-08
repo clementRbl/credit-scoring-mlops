@@ -1,0 +1,6 @@
+# Dépendances du pipeline de surveillance et de réentraînement (pas de l'API).
+# Séparées de requirements.txt pour garder l'image Docker de l'API légère.
+-r requirements.txt
+# MLflow 2.x : le serveur MLflow hébergé par DagsHub est compatible avec cette branche.
+mlflow==2.22.5
+dvc==3.67.1

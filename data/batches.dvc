@@ -1,0 +1,6 @@
+outs:
+- md5: eccfdc316f968dfc67725e9e9b21f434.dir
+  size: 26720288
+  nfiles: 4
+  hash: md5
+  path: batches
