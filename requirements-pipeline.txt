@@ -4,3 +4,6 @@
 # MLflow 2.x : le serveur MLflow hébergé par DagsHub est compatible avec cette branche.
 mlflow==2.22.5
 dvc==3.67.1
+# Sans borne basse, le résolveur peut retenir aiohttp 2.x (2017), incompatible avec
+# Python 3.12 : `dvc pull` échoue alors sur « asyncio has no attribute coroutine ».
+aiohttp>=3.9
