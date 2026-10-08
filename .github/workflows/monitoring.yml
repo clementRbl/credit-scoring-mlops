@@ -1,0 +1,129 @@
+name: Surveillance et réentraînement
+
+# Chaque lundi, surveille le dernier lot reçu. En cas de dérive ou de baisse de
+# performance : issue d'alerte, réentraînement d'un challenger, et Pull Request
+# si le challenger mérite la production. Un humain valide la PR ; le CI/CD
+# existant déploie après fusion.
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+    inputs:
+      month:
+        description: "Mois à surveiller (vide : le dernier lot reçu)"
+        required: false
+        type: string
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+# Deux exécutions simultanées ouvriraient deux PR pour le même mois.
+concurrency:
+  group: surveillance
+  cancel-in-progress: false
+
+jobs:
+  surveiller:
+    runs-on: ubuntu-latest
+    env:
+      DAGSHUB_USER: ${{ vars.DAGSHUB_USER }}
+      DAGSHUB_TOKEN: ${{ secrets.DAGSHUB_TOKEN }}
+      GH_TOKEN: ${{ github.token }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: astral-sh/setup-uv@v6
+
+      - name: Installer les dépendances du pipeline
+        run: uv pip install --system -r requirements-pipeline.txt
+
+      - name: Récupérer les données versionnées (DVC → DagsHub)
+        run: |
+          dvc remote modify origin --local user "$DAGSHUB_USER"
+          dvc remote modify origin --local password "$DAGSHUB_TOKEN"
+          dvc pull
+
+      - name: Surveiller le lot
+        id: monitor
+        env:
+          MONTH: ${{ inputs.month }}
+        run: |
+          python -m pipeline.monitor ${MONTH:+--month "$MONTH"} > summary.json
+          cat summary.json
+          echo "month=$(jq -r .month summary.json)" >> "$GITHUB_OUTPUT"
+          echo "retrain=$(jq -r .retrain_needed summary.json)" >> "$GITHUB_OUTPUT"
+
+      - name: Ouvrir une issue d'alerte
+        if: steps.monitor.outputs.retrain == 'true'
+        env:
+          MONTH: ${{ steps.monitor.outputs.month }}
+        run: |
+          title="Alerte modèle : mois $MONTH"
+          already_open=$(gh issue list --state open --search "\"$title\" in:title" --json number --jq length)
+          if [ "$already_open" -gt 0 ]; then
+            echo "Issue déjà ouverte pour le mois $MONTH."
+            exit 0
+          fi
+          cp "reports/month_$MONTH/summary.md" issue.md
+          printf '\n[Rapport Evidently et détails de l'\''exécution](%s)\n' "$RUN_URL" >> issue.md
+          gh issue create --title "$title" --body-file issue.md
+
+      - name: Vérifier qu'aucune promotion n'attend déjà pour ce mois
+        id: pending
+        if: steps.monitor.outputs.retrain == 'true'
+        env:
+          MONTH: ${{ steps.monitor.outputs.month }}
+        run: |
+          pending=$(gh pr list --state open --json headRefName \
+            --jq "[.[] | select(.headRefName | startswith(\"retrain/month-$MONTH-\"))] | length")
+          echo "count=$pending" >> "$GITHUB_OUTPUT"
+
+      - name: Réentraîner un challenger et le comparer au champion
+        id: retrain
+        if: steps.monitor.outputs.retrain == 'true' && steps.pending.outputs.count == '0'
+        env:
+          MONTH: ${{ steps.monitor.outputs.month }}
+        run: |
+          python -m pipeline.retrain --month "$MONTH" > promotion.json
+          cat promotion.json
+          echo "promoted=$(jq -r .promoted promotion.json)" >> "$GITHUB_OUTPUT"
+          echo "version=$(jq -r .challenger_version promotion.json)" >> "$GITHUB_OUTPUT"
+
+      # Une PR ouverte avec le jeton du workflow ne relance pas la CI : les tests
+      # de l'API tournent donc ici, sur le nouveau modèle, avant d'ouvrir la PR.
+      - name: Tester l'API avec le challenger
+        if: steps.retrain.outputs.promoted == 'true'
+        run: pytest tests/ -q
+
+      - name: Proposer la promotion (Pull Request)
+        if: steps.retrain.outputs.promoted == 'true'
+        env:
+          MONTH: ${{ steps.monitor.outputs.month }}
+          VERSION: ${{ steps.retrain.outputs.version }}
+        run: |
+          branch="retrain/month-$MONTH-v$VERSION"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$branch"
+          git add model/model.pkl model/model_meta.json
+          git commit -m "feat(model): promote challenger v$VERSION after month $MONTH monitoring"
+          git push origin "$branch"
+          cp "reports/month_$MONTH/promotion.md" pr.md
+          printf '\n[Détails de l'\''exécution](%s)\n' "$RUN_URL" >> pr.md
+          gh pr create --base main --head "$branch" \
+            --title "Promotion du modèle v$VERSION (mois $MONTH)" --body-file pr.md
+
+      - name: Joindre les rapports à l'exécution
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rapports-surveillance
+          path: reports/
+          if-no-files-found: ignore
