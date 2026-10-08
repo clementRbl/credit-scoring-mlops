@@ -1,15 +1,24 @@
+import json
+from pathlib import Path
+
 from fastapi.testclient import TestClient
 
 from app import app
 
 client = TestClient(app)
 
+# Le seuil et la version sont ceux du modèle livré, pas une constante du code.
+MODEL_META = json.loads(Path("model/model_meta.json").read_text())
+
 
 # --- Health ---
 def test_health():
     response = client.get("/health")
     assert response.status_code == 200
-    assert response.json() == {"status": "ok"}
+    assert response.json() == {
+        "status": "ok",
+        "model_version": MODEL_META["model_version"],
+    }
 
 
 # --- Prédiction valide ---
@@ -20,7 +29,7 @@ def test_predict_valid_client():
     assert data["SK_ID_CURR"] == 100001
     assert 0.0 <= data["probability"] <= 1.0
     assert data["decision"] in ("ACCORDE", "REFUSE")
-    assert data["threshold"] == 0.47
+    assert data["threshold"] == MODEL_META["threshold"]
 
 
 # --- Format de réponse ---
@@ -116,5 +125,14 @@ def test_openapi_propose_un_exemple():
 
 def test_openapi_a_une_description():
     schema = client.get("/openapi.json").json()
-    assert "0,47" in schema["info"]["description"]
+    threshold_fr = f"{MODEL_META['threshold']:.2f}".replace(".", ",")
+    assert threshold_fr in schema["info"]["description"]
     assert {t["name"] for t in schema["tags"]} == {"Scoring", "Données", "Santé"}
+
+
+def test_la_decision_applique_le_seuil_du_modele():
+    """Un modèle réentraîné a son propre seuil : l'API doit appliquer celui-là."""
+    for entry in client.get("/clients?limit=5").json()["clients"]:
+        data = client.post(f"/predict?SK_ID_CURR={entry['SK_ID_CURR']}").json()
+        expected = "REFUSE" if data["probability"] >= data["threshold"] else "ACCORDE"
+        assert data["decision"] == expected

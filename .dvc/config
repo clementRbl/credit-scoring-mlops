@@ -1,0 +1,7 @@
+[core]
+    remote = origin
+    autostage = true
+    analytics = false
+['remote "origin"']
+    url = https://dagshub.com/clementRbl/credit-scoring-mlops.dvc
+    auth = basic

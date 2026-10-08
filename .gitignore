@@ -1,10 +1,14 @@
-# Data
-data/*
-!data/processed/
+# Données brutes Home Credit et jeu d'entraînement fusionné (trop lourds pour git).
+# Pas de « data/* » : DVC lirait alors tout data/ comme ignoré et ne verrait pas
+# ses pointeurs data/*.dvc.
+data/*.csv
 data/processed/train_merged.parquet
 
 # Logs
 logs/
+
+# Secrets (identifiants DagsHub)
+.env
 
 # Python
 __pycache__/
@@ -27,3 +31,6 @@ docs/ARCHITECTURE.md
 docs/CONSIGNES.md
 docs/PRESENTATION.md
 docs/TEST_GUIDE.md
+
+# Rapports de surveillance (joints aux exécutions du workflow en CI)
+reports/

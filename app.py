@@ -25,11 +25,18 @@ logger.addHandler(file_handler)
 
 # --- Chargement modèle et données au démarrage ---
 MODEL_PATH = Path("model/model.pkl")
+MODEL_META_PATH = Path("model/model_meta.json")
 DATA_PATH = Path("data/processed/test_merged.parquet")
-THRESHOLD = 0.47
 
 with open(MODEL_PATH, "rb") as f:
     model = pickle.load(f)
+
+# Le seuil voyage avec le modèle : chaque réentraînement recalcule le seuil qui
+# minimise le coût métier, l'API applique donc celui du modèle livré.
+MODEL_META = json.loads(MODEL_META_PATH.read_text())
+THRESHOLD = MODEL_META["threshold"]
+MODEL_VERSION = MODEL_META["model_version"]
+THRESHOLD_FR = f"{THRESHOLD:.2f}".replace(".", ",")
 
 # Forcer le modèle en CPU
 classifier = model.named_steps["classifier"]
@@ -45,7 +52,7 @@ FEATURES = list(ct.transformers_[0][2]) + list(ct.transformers_[1][2])
 clients_df = pd.read_parquet(DATA_PATH)
 clients_df = clients_df.set_index("SK_ID_CURR")
 
-DESCRIPTION = """
+DESCRIPTION = f"""
 Scoring de risque de crédit, servi en production.
 
 Le modèle est un **LightGBM** entraîné sur le jeu *Home Credit Default Risk*. Il estime
@@ -65,18 +72,15 @@ demande dans le jeu qu'elle sert, en extrait les variables attendues par le mod�
 renvoie
 la probabilité accompagnée de la décision.
 
-### Pourquoi le seuil est à 0,47 et non à 0,50
+### Pourquoi le seuil vaut {THRESHOLD_FR}
 
 Parce que les deux erreurs ne coûtent pas la même chose. Accorder un prêt à quelqu'un
-qui ne
-remboursera pas fait perdre le capital ; refuser un bon client ne fait perdre qu'une
-marge. Le
-projet chiffre ce rapport à **dix contre un**, et 0,47 est le seuil qui minimise le coût
-total
-sur le jeu de validation. Le seuil n'appartient donc pas au modèle : c'est une décision
-de
-gestion posée sur sa sortie, et l'API la rend explicite en la renvoyant dans chaque
-réponse.
+qui ne remboursera pas fait perdre le capital ; refuser un bon client ne fait perdre
+qu'une marge. Le projet chiffre ce rapport à **dix contre un**, et le seuil retenu est
+celui qui minimise le coût total en validation croisée. Il est recalculé à chaque
+réentraînement : {THRESHOLD_FR} pour le modèle en service (version {MODEL_VERSION}).
+C'est une décision de gestion posée sur la sortie du modèle, et l'API la rend explicite
+en la renvoyant dans chaque réponse.
 
 ### Limites connues
 
@@ -187,15 +191,15 @@ class PredictionResponse(BaseModel):
             "examples": [
                 {
                     "SK_ID_CURR": 100001,
-                    "probability": 0.3718,
+                    "probability": 0.3546,
                     "decision": "ACCORDE",
-                    "threshold": 0.47,
+                    "threshold": THRESHOLD,
                 },
                 {
                     "SK_ID_CURR": 100005,
-                    "probability": 0.666,
+                    "probability": 0.5502,
                     "decision": "REFUSE",
-                    "threshold": 0.47,
+                    "threshold": THRESHOLD,
                 },
             ]
         }
@@ -236,11 +240,21 @@ EMPLOYED_SENTINEL = 365243
     "/health",
     tags=["Santé"],
     summary="Le service répond-il ?",
-    description="Sonde de disponibilité. Ne charge rien et ne consomme aucun quota.",
-    responses={200: {"content": {"application/json": {"example": {"status": "ok"}}}}},
+    description=(
+        "Sonde de disponibilité. Ne charge rien et ne consomme aucun quota. "
+        "`model_version` est la version du modèle servi dans le Model Registry : "
+        "elle change quand un modèle réentraîné est promu."
+    ),
+    responses={
+        200: {
+            "content": {
+                "application/json": {"example": {"status": "ok", "model_version": 1}}
+            }
+        }
+    },
 )
 def health():
-    return {"status": "ok"}
+    return {"status": "ok", "model_version": MODEL_VERSION}
 
 
 @app.get(

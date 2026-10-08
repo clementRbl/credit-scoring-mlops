@@ -16,11 +16,14 @@ jobs:
         with:
           python-version: "3.12"
 
+      - uses: astral-sh/setup-uv@v6
+
+      # Les tests couvrent aussi le pipeline de réentraînement (MLflow, DVC).
       - name: Installer les dépendances
-        run: pip install -r requirements.txt
+        run: uv pip install --system -r requirements-pipeline.txt
 
       - name: Lancer les tests
-        run: pytest tests/ -v --cov=app --cov-report=term-missing
+        run: pytest tests/ -v --cov=app --cov=pipeline --cov-report=term-missing
 
   build:
     runs-on: ubuntu-latest
@@ -49,3 +52,19 @@ jobs:
           git lfs migrate import --include="*.parquet,*.pkl,*.png" --everything
           git remote add hf https://ClementRbl:$HF_TOKEN@huggingface.co/spaces/ClementRbl/credit-scoring-api || true
           git push hf main --force
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: astral-sh/setup-uv@v6
+
+      # Le modèle déployé devient le champion du Model Registry : la surveillance
+      # et le prochain réentraînement le compareront à ce modèle-là.
+      - name: Donner l'alias champion au modèle déployé
+        env:
+          DAGSHUB_USER: ${{ vars.DAGSHUB_USER }}
+          DAGSHUB_TOKEN: ${{ secrets.DAGSHUB_TOKEN }}
+        run: |
+          uv pip install --system -r requirements-pipeline.txt
+          python -m pipeline.registry
