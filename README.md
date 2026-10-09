@@ -9,7 +9,7 @@ app_port: 7860
 
 # Credit Scoring MLOps
 
-API de scoring crédit pour l'entreprise "Prêt à Dépenser". Ce projet déploie un modèle LightGBM qui prédit la probabilité de défaut de paiement d'un client.
+API de scoring crédit pour l'entreprise « Prêt à Dépenser ». Ce projet déploie un modèle LightGBM qui prédit la probabilité de défaut de paiement d'un client.
 
 **API en ligne :** https://clementrbl-credit-scoring-api.hf.space/docs
 **Suivi des modèles (MLflow sur DagsHub) :** https://dagshub.com/clementRbl/credit-scoring-mlops.mlflow
@@ -19,9 +19,9 @@ API de scoring crédit pour l'entreprise "Prêt à Dépenser". Ce projet déploi
 
 Un modèle de crédit se dégrade en silence quand la clientèle ou les comportements
 changent. La V2 ferme la boucle : chaque lundi, un workflow surveille le dernier
-lot mensuel reçu ; en cas d'alerte, il ouvre une issue, réentraîne un challenger
-et, si celui-ci fait mieux, propose sa mise en production dans une Pull Request.
-Un humain valide : c'est une décision de crédit.
+lot mensuel reçu. En cas d'alerte, il ouvre une issue et réentraîne un challenger.
+Si celui-ci fait mieux, le workflow propose sa mise en production dans une Pull
+Request, et un humain la valide, parce que c'est une décision de crédit.
 
 ```
 lot mensuel ──▶ surveillance ──┬── rien à signaler ──▶ fin
@@ -46,20 +46,20 @@ lot mensuel ──▶ surveillance ──┬── rien à signaler ──▶ fi
 
 ### Deux déclencheurs, parce qu'ils ne voient pas la même chose
 
-- **Dérive des données** : au moins 30 % des 20 variables les plus importantes du
-  champion changent de distribution (Evidently).
-- **Coût métier** (`10 × FN + 1 × FP` par demande) : plus de 10 % au-dessus de la
-  référence. Il voit la dérive de concept, invisible pour un test de dérive des
-  données. Il suppose les défauts du lot connus, ce qui arrive quelques mois après
-  l'octroi.
+Le workflow alerte dans deux cas. Le premier : au moins 30 % des 20 variables les
+plus importantes du champion changent de distribution (test Evidently). Le second :
+le coût métier par demande (`10 × FN + 1 × FP`) dépasse la référence de plus de 10 %.
+Ce coût voit la dérive de concept, qu'un test sur les variables ne voit pas. Il
+suppose en revanche que les défauts du lot sont connus, ce qui n'arrive que
+quelques mois après l'octroi.
 
 ### Le scénario simulé
 
-Le jeu Home Credit n'a pas de dates. Les 307 511 demandes étiquetées sont découpées
-une fois pour toutes : 60 % de référence (entraîne le champion v1), 20 % en quatre
-lots mensuels, 20 % de test figé jamais appris. Le modèle de la V1 avait vu 100 %
-des données : il a été réentraîné sur la seule référence, sans quoi la simulation
-aurait été faussée.
+Le jeu Home Credit n'a pas de dates. `pipeline.split` découpe donc une fois pour
+toutes les 307 511 demandes étiquetées : 60 % de référence pour entraîner le
+champion v1, 20 % en quatre lots mensuels, 20 % de test figé que le modèle n'apprend
+jamais. Le modèle de la V1 avait vu 100 % des données. Le champion v1 repart donc de
+la seule référence, sinon il aurait déjà appris les lots censés être nouveaux.
 
 | Mois | Ce qui change | Variables qui dérivent | Coût métier | Résultat |
 |---|---|---|---|---|
@@ -74,10 +74,10 @@ réentraîner n'apporte rien, et la règle évite une mise en production inutile
 ### Règle de promotion
 
 Le challenger apprend sur la référence, les mois reçus et 70 % du mois courant.
-Il est comparé au champion sur les 30 % restants, que ni l'un ni l'autre n'a vus.
-Il est promu si son coût métier y est **inférieur d'au moins 1 %**, et s'il ne
-dégrade pas de **plus de 2 %** le test figé. Chaque modèle garde son propre seuil
-de décision, choisi en validation croisée.
+On compare les deux modèles sur les 30 % restants, qu'aucun n'a vus. Le challenger
+passe si son coût métier y est inférieur d'au moins 1 % à celui du champion, et s'il
+ne dégrade pas le test figé de plus de 2 %. Chaque modèle garde son propre seuil de
+décision, choisi en validation croisée.
 
 ### Lancer le pipeline en local
 
@@ -116,9 +116,9 @@ uvicorn app:app --host 0.0.0.0 --port 8000
 
 ## Endpoints
 
-- `GET /health` — état de l'API et version du modèle servi
-- `POST /predict?SK_ID_CURR=100001` — prédiction pour un client
-- `GET /docs` — documentation Swagger auto-générée
+- `GET /health` : état de l'API et version du modèle servi
+- `POST /predict?SK_ID_CURR=100001` : prédiction pour un client
+- `GET /docs` : documentation Swagger générée par FastAPI
 
 ## Lancer les tests
 
@@ -128,33 +128,28 @@ pytest tests/ -v --cov=app --cov=pipeline
 
 ## Monitoring
 
-L'API log chaque prédiction en JSON structuré dans `logs/predictions.jsonl` :
-- timestamp, SK_ID_CURR, probabilité, décision, temps d'inférence
+L'API journalise chaque prédiction dans `logs/predictions.jsonl` (détail plus bas).
+L'analyse de dérive de la V1 est dans `notebooks/data_drift_analysis.ipynb` (Evidently).
 
-L'analyse de drift est dans `notebooks/data_drift_analysis.ipynb` (Evidently AI).
-
-Le dashboard Streamlit visualise les métriques de production :
+Le dashboard Streamlit affiche les métriques de production :
 ```bash
 streamlit run dashboard.py
 ```
 
 ## Stockage des données de production
 
-**Stratégie** : logging structuré JSON (fichier JSONL local).
-
-Chaque appel à l'API enregistre automatiquement dans `logs/predictions.jsonl` :
+L'API écrit une ligne JSON par appel dans un fichier local, `logs/predictions.jsonl` :
 - `timestamp` : date/heure de la requête
 - `SK_ID_CURR` : identifiant du client
 - `probability` : score de probabilité de défaut
 - `decision` : ACCORDE ou REFUSE
 - `inference_time_ms` : temps d'inférence en millisecondes
 
-Ce format permet :
-- L'analyse de drift (comparaison des distributions de scores)
-- Le suivi de la latence et des performances
-- La détection d'anomalies (taux de refus, temps de réponse)
+Ces lignes servent à comparer les distributions de scores d'une période à l'autre,
+à suivre la latence et à repérer une anomalie, par exemple un taux de refus qui
+grimpe.
 
-Screenshots de la solution :
+Captures :
 
 ![Logs JSONL](screenshots/logs_jsonl.png)
 ![Dashboard Streamlit](screenshots/dashboard_streamlit_1.png)
@@ -162,7 +157,7 @@ Screenshots de la solution :
 
 ## Optimisation
 
-ONNX Runtime a été testé (+6% vitesse, -39% taille) mais retiré volontairement : le risque d'erreurs silencieuses sur les features catégorielles ne justifiait pas le gain marginal. L'API utilise directement `pipeline.predict_proba()` pour une inférence fiable (~6 ms).
+Le test d'ONNX Runtime a donné +6 % de vitesse et −39 % de taille, mais le projet ne l'a pas gardé : le risque d'erreurs silencieuses sur les variables catégorielles ne justifiait pas ce petit gain. L'API appelle directement `pipeline.predict_proba()`, environ 6 ms par prédiction.
 
 ## Structure du projet
 
