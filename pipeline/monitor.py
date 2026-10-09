@@ -95,6 +95,19 @@ def assess(drift_share: float, cost: float, reference_cost: float) -> tuple[bool
     return data_drift, performance_alert
 
 
+def reference_cost(meta: dict) -> float:
+    """Coût par client auquel le modèle servi a été accepté.
+
+    Un modèle promu a été jugé sur les données récentes de sa promotion : c'est son
+    niveau de référence. Le comparer au test figé, d'un régime antérieur, ferait
+    sonner l'alerte chaque semaine après un choc qui a durablement relevé les
+    défauts. Le champion initial, entraîné avant tout lot, n'a que le test figé."""
+    metrics = meta["metrics"]
+    return metrics.get(
+        "holdout_cost_per_client", metrics["frozen_test_cost_per_client"]
+    )
+
+
 def latest_month() -> int:
     months = [
         int(p.stem.removeprefix("month_")) for p in config.BATCHES_DIR.glob("*.parquet")
@@ -117,8 +130,8 @@ def monitor(month: int) -> dict:
     features = lot.drop(columns=EXCLUDE_COLS)
     proba = pipeline.predict_proba(features)[:, 1]
     cost = cost_per_client(lot["TARGET"].to_numpy(), proba, meta["threshold"])
-    reference_cost = meta["metrics"]["frozen_test_cost_per_client"]
-    data_drift, performance_alert = assess(drift_share, cost, reference_cost)
+    reference = reference_cost(meta)
+    data_drift, performance_alert = assess(drift_share, cost, reference)
 
     summary = {
         "month": month,
@@ -127,8 +140,8 @@ def monitor(month: int) -> dict:
         "drift_share": round(drift_share, 3),
         "drifted_columns": drifted,
         "cost_per_client": round(cost, 4),
-        "reference_cost_per_client": reference_cost,
-        "cost_change": round(cost / reference_cost - 1, 3),
+        "reference_cost_per_client": reference,
+        "cost_change": round(cost / reference - 1, 3),
         "data_drift": data_drift,
         "performance_alert": performance_alert,
         "retrain_needed": data_drift or performance_alert,
