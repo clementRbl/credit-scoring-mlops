@@ -1,9 +1,10 @@
 {
-  "model_version": 1,
-  "threshold": 0.5,
-  "training_rows": 184506,
+  "model_version": 4,
+  "threshold": 0.48,
+  "training_rows": 234680,
   "metrics": {
-    "frozen_test_auc": 0.7783,
-    "frozen_test_cost_per_client": 0.4981
+    "frozen_test_auc": 0.7817,
+    "frozen_test_cost_per_client": 0.493,
+    "holdout_cost_per_client": 0.6816
   }
 }
