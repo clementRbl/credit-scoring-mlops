@@ -57,8 +57,12 @@ jobs:
         run: |
           python -m pipeline.monitor ${MONTH:+--month "$MONTH"} > summary.json
           cat summary.json
-          echo "month=$(jq -r .month summary.json)" >> "$GITHUB_OUTPUT"
-          echo "retrain=$(jq -r .retrain_needed summary.json)" >> "$GITHUB_OUTPUT"
+          # Lectures hors de « echo » : si jq échoue, l'étape échoue au lieu de
+          # transmettre une valeur vide qui ferait sauter les étapes suivantes.
+          month=$(jq -r .month summary.json)
+          retrain=$(jq -r .retrain_needed summary.json)
+          echo "month=$month" >> "$GITHUB_OUTPUT"
+          echo "retrain=$retrain" >> "$GITHUB_OUTPUT"
 
       - name: Ouvrir une issue d'alerte
         if: steps.monitor.outputs.retrain == 'true'
@@ -91,10 +95,14 @@ jobs:
         env:
           MONTH: ${{ steps.monitor.outputs.month }}
         run: |
-          python -m pipeline.retrain --month "$MONTH" > promotion.json
-          cat promotion.json
-          echo "promoted=$(jq -r .promoted promotion.json)" >> "$GITHUB_OUTPUT"
-          echo "version=$(jq -r .challenger_version promotion.json)" >> "$GITHUB_OUTPUT"
+          python -m pipeline.retrain --month "$MONTH"
+          # Relu depuis le fichier écrit par retrain.py : MLflow écrit aussi sur la
+          # sortie standard, qui n'est donc pas du JSON pur.
+          report="reports/month_$MONTH/promotion.json"
+          promoted=$(jq -r .promoted "$report")
+          version=$(jq -r .challenger_version "$report")
+          echo "promoted=$promoted" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
       # Une PR ouverte avec le jeton du workflow ne relance pas la CI : les tests
       # de l'API tournent donc ici, sur le nouveau modèle, avant d'ouvrir la PR.
