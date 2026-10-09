@@ -2,7 +2,7 @@
 
 - **Date** : 2026-10-08
 - **Type** : feature
-- **Statut** : cadrage
+- **Statut** : vérifié
 
 ## Besoin
 - **Problème** : le modèle de scoring est déployé et surveillé, mais la surveillance s'arrête à un notebook. Personne n'est alerté quand les données dérivent, rien ne réentraîne le modèle, et ni les données ni les modèles ne sont versionnés. Le modèle se dégrade donc en silence.
@@ -78,9 +78,24 @@ Le modèle actuellement en production a vu 100 % des données étiquetées. Le c
 ## Vérification
 | Critère | Preuve (commande → extrait de sortie) | OK / KO |
 |---|---|---|
-| | | |
+| `dvc pull` depuis DagsHub | CI rejouée depuis un clone vierge → `10 files fetched and 10 files added` ; étape « Récupérer les données » verte ([run](https://github.com/clementRbl/credit-scoring-mlops/actions/runs/37904674657)) | OK |
+| Découpage déterministe, sans recouvrement | `python -m pipeline.split` lancé deux fois → `md5sum` identiques ; `tests/test_split.py` (4 tests) | OK |
+| Champion v1 enregistré, alias `champion` | `get_model_version_by_alias("champion")` → `version 1`, étiquette `threshold: 0.5` (08/10) | OK |
+| L'API lit seuil et version | API en ligne : `/health` → `{"status":"ok","model_version":4}`, `/predict` → `"threshold":0.48` | OK |
+| Mois 1 sans alerte, mois 3 dérive, mois 4 performance | Runs GitHub : [mois 1](https://github.com/clementRbl/credit-scoring-mlops/actions/runs/37817647750) dérive 0 %, coût +1,9 % ; [mois 3](https://github.com/clementRbl/credit-scoring-mlops/actions/runs/37818016873) dérive 35 % ; [mois 4](https://github.com/clementRbl/credit-scoring-mlops/actions/runs/37904674657) dérive 0 %, coût +45,9 % | OK |
+| Issue d'alerte | [#15](https://github.com/clementRbl/credit-scoring-mlops/issues/15) (mois 3), [#16](https://github.com/clementRbl/credit-scoring-mlops/issues/16) (mois 4) ; pas de doublon à la relance : « Issue déjà ouverte pour le mois 4 » | OK |
+| Challenger entraîné sans la part gardée, alias `challenger` | `tests/test_retrain.py` (aucun identifiant commun) ; Registry : v2 (mois 3), v4 (mois 4) | OK |
+| Règle de promotion testée aux bords | `tests/test_retrain.py` : égalité, -1 %, -0,8 %, +2 %, +2,25 % | OK |
+| PR, fusion, déploiement, alias, `/health` | [PR #18](https://github.com/clementRbl/credit-scoring-mlops/pull/18) ouverte par le workflow (45 tests passés avant) ; après fusion : [CI/CD](https://github.com/clementRbl/credit-scoring-mlops/actions/runs/37905513756) vert, `Alias champion → version 4`, `/health` → `model_version: 4` | OK |
+| Chaque semaine et à la main | `workflow_dispatch` prouvé (5 lancements) ; le déclenchement du lundi n'a pas encore été observé (premier : 12/10) | Partiel |
+| Tests existants verts, couverture identique partout | 47 tests verts ; API couverte à 96 % (CI). README corrigé (98 % → 96 %) ; portfolio et rapport encore à aligner | Partiel |
 
-- **La sortie est-elle bonne ?**
-- **Est-ce que ça fait sens ? Pourquoi ?**
+- **La sortie est-elle bonne ?** Oui. Les chiffres obtenus sur GitHub Actions sont identiques au dix-millième près à ceux calculés en local (graine fixe) : mois 3, challenger 0,5616 contre 0,557 (non promu) ; mois 4, 0,6816 contre 0,7418 (promu).
+- **Est-ce que ça fait sens ? Pourquoi ?** Le mois 3 rend la clientèle plus risquée sans rendre le modèle faux : réentraîner n'apporte rien et la règle refuse, à juste titre. Le mois 4 change la relation entre variables et défaut : seul le coût métier le voit (0 % de dérive des données), et un modèle qui apprend le nouveau régime fait nettement mieux (-8,1 % ; intervalle de confiance à 90 % mesuré en exploration : [-11,6 % ; -4,2 %]). La v4 gagne aussi sur le passé (AUC 0,782 contre 0,778 sur le test figé), ce qu'explique son entraînement sur 27 % de données en plus.
 - **Points douteux / limites** :
-- **Validé par l'utilisateur le** :
+  - Paramètres de simulation ajustés après essai : dérive du mois 3 renforcée (30 % de variables, pile au seuil, puis 35 %) ; choc du mois 4 porté de 8 % à 15 %, car à 8 % le gain du challenger restait dans le bruit. Choix documentés, pas cachés.
+  - Marge de promotion de 1 % petite face au bruit d'un mois (quelques milliers de demandes) : elle ne protège pas d'un gain dû au hasard.
+  - Les défauts d'un lot sont supposés connus au moment de la surveillance ; dans une banque, ils arrivent des mois après l'octroi.
+  - La dérive est mesurée par rapport à la population d'origine, même après une promotion.
+  - Incidents : aiohttp 2.x retenu en CI (#14), sortie MLflow mêlée au JSON qui faisait sauter la PR (#17), et fausse alerte hebdomadaire anticipée après la promotion (référence de coût restée sur l'ancien régime, corrigée). La v3 du Registry, promue mais jamais livrée, est annotée.
+- **Validé par l'utilisateur le** : 2026-10-09
