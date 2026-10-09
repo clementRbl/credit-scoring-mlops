@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from pipeline.monitor import assess, measure_data_drift, top_features
+from pipeline.monitor import assess, measure_data_drift, reference_cost, top_features
 from pipeline.train import train_model
 
 
@@ -61,3 +61,20 @@ def test_les_variables_surveillees_sont_les_colonnes_d_origine():
     # « cat__CODE_GENDER_F » redevient « CODE_GENDER », une seule fois
     assert set(features) == {"EFFORT", "NOISE", "CODE_GENDER"}
     assert features.index("EFFORT") < features.index("NOISE")
+
+
+def test_la_reference_d_un_modele_promu_est_son_cout_a_la_promotion():
+    """Après un changement de régime, même un modèle adapté coûte plus qu'avant :
+    le comparer à l'ancien régime déclencherait une alerte chaque semaine."""
+    promoted = {
+        "metrics": {
+            "frozen_test_cost_per_client": 0.49,
+            "holdout_cost_per_client": 0.68,
+        }
+    }
+    assert reference_cost(promoted) == 0.68
+
+
+def test_la_reference_du_champion_initial_est_le_test_fige():
+    initial = {"metrics": {"frozen_test_cost_per_client": 0.49}}
+    assert reference_cost(initial) == 0.49
