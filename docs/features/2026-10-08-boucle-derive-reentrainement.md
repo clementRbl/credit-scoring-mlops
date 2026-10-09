@@ -8,26 +8,26 @@
 - **Problème** : le modèle de scoring est déployé et surveillé, mais la surveillance s'arrête à un notebook. Personne n'est alerté quand les données dérivent, rien ne réentraîne le modèle, et ni les données ni les modèles ne sont versionnés. Le modèle se dégrade donc en silence.
 - **Pour qui** : l'équipe risque de Prêt à Dépenser, qui doit pouvoir se fier au score dans la durée. C'est aussi le projet personnel technique du portfolio (thèmes de la consigne : cycle de vie MLOps, réentraînement automatique, suivi de la dérive, versionnage DVC / MLflow Model Registry).
 - **Pourquoi maintenant** : ce sont les quatre limites listées dans le rapport V1. Soutenance le 20 octobre 2026.
-- **Exemple concret** : un lot mensuel arrive avec des montants de crédit 30 % plus élevés → la surveillance hebdomadaire détecte la dérive → une issue d'alerte est ouverte → un challenger est réentraîné, comparé au champion, puis proposé dans une Pull Request avec le tableau des scores → après fusion, le CI/CD déploie et l'API annonce la nouvelle version du modèle.
+- **Exemple concret** : un lot mensuel arrive avec des montants de crédit 30 % plus élevés → la surveillance hebdomadaire détecte la dérive → le workflow ouvre une issue d'alerte → il réentraîne un challenger, le compare au champion et le propose dans une Pull Request avec le tableau des scores → après fusion, le CI/CD déploie et l'API annonce la nouvelle version du modèle.
 
 ## Simulation des données (le jeu Home Credit n'a pas de dates)
-Les 307 511 demandes étiquetées (8,07 % de défauts) sont découpées une fois, de façon stratifiée et avec une graine fixe :
+Un découpage unique, stratifié et à graine fixe, répartit les 307 511 demandes étiquetées (8,07 % de défauts) :
 
 | Part | Rôle |
 |---|---|
-| 60 % | **Référence** : entraîne le champion v1 |
-| 20 % | **Quatre lots mensuels** : les « nouvelles données » |
-| 20 % | **Test figé** : jamais utilisé pour l'entraînement |
+| 60 % | Référence : entraîne le champion v1 |
+| 20 % | Quatre lots mensuels : les « nouvelles données » |
+| 20 % | Test figé : jamais utilisé pour l'entraînement |
 
 Les lots simulent quatre mois :
-1. **Mois 1** : stable (lot témoin).
-2. **Mois 2** : stable.
-3. **Mois 3** : dérive des données injectée. Une campagne attire une clientèle plus jeune : tous les moins de 40 ans sont gardés, mais seulement 25 % des autres. Les montants (crédit, prix du bien, annuité) sont multipliés par 1,3.
-4. **Mois 4** : dérive de concept injectée. Un choc économique fait défaillir 15 % des bons payeurs parmi les salariés aux revenus modestes ; les variables ne bougent pas.
+1. Mois 1 : stable (lot témoin).
+2. Mois 2 : stable.
+3. Mois 3 : dérive des données injectée. Une campagne attire une clientèle plus jeune : tous les moins de 40 ans sont gardés, mais seulement 25 % des autres. Les montants (crédit, prix du bien, annuité) sont multipliés par 1,3.
+4. Mois 4 : dérive de concept injectée. Un choc économique fait défaillir 15 % des bons payeurs parmi les salariés aux revenus modestes ; les variables ne bougent pas.
 
-Les paramètres des dérives sont écrits dans la configuration et décrits dans le README.
+`pipeline/config.py` fixe les paramètres des dérives, et le README les décrit.
 
-Le modèle actuellement en production a vu 100 % des données étiquetées. Le champion v1 est donc **réentraîné sur la seule référence**, avec les mêmes hyperparamètres (LightGBM, 200 arbres, profondeur 6, taux 0,1, `class_weight="balanced"`). Sans cela, la simulation serait faussée.
+Le modèle actuellement en production a vu 100 % des données étiquetées. Le champion v1 repart donc de la seule référence, avec les mêmes hyperparamètres (LightGBM, 200 arbres, profondeur 6, taux 0,1, `class_weight="balanced"`). Sinon, il aurait déjà appris les lots censés être nouveaux.
 
 ## Critères d'acceptation
 - [ ] `dvc pull` récupère les données (découpages et lots) depuis DagsHub, puis `dvc status` ne signale aucun écart. Le modèle servi (732 Ko) reste dans git ; ses versions sont tenues par le MLflow Model Registry.
@@ -35,7 +35,7 @@ Le modèle actuellement en production a vu 100 % des données étiquetées. Le c
 - [ ] Le champion v1 est enregistré dans le MLflow Model Registry de DagsHub avec l'alias `champion`. AUC, coût métier et seuil y sont journalisés.
 - [ ] L'API lit le seuil et la version dans les métadonnées du modèle (plus de 0,47 en dur). `GET /health` renvoie `model_version` (tests).
 - [ ] Surveillance du mois 1 : ni dérive ni alerte de performance. Mois 3 : dérive détectée (part de variables dérivantes ≥ 30 % sur les 20 plus importantes). Mois 4 : alerte de performance (coût métier par client > référence + 10 %). Les fonctions de décision sont testées sur données synthétiques.
-- [ ] En cas de dérive ou d'alerte de performance, une issue GitHub est ouverte avec le résumé, et le rapport Evidently est joint à l'exécution (preuve : lien de l'exécution).
+- [ ] En cas de dérive ou d'alerte de performance, le workflow ouvre une issue GitHub avec le résumé et joint le rapport Evidently à l'exécution (preuve : lien de l'exécution).
 - [ ] Le challenger est entraîné sur la référence et les lots reçus, sans les 30 % du dernier lot gardés pour l'évaluation. Il est enregistré avec l'alias `challenger`.
 - [ ] Règle de promotion : coût du challenger ≤ 0,99 × celui du champion sur les 30 % gardés, ET coût sur le test figé ≤ 1,02 × celui du champion. Testée aux bords : égalité, exactement −1 %, garde-fou exactement +2 %.
 - [ ] Si la règle est remplie, le workflow ouvre une Pull Request : `model/model.pkl` et `model/model_meta.json` mis à jour, tableau champion / challenger dans la description. Après fusion, le CI/CD déploie, passe l'alias `champion` au nouveau modèle, et `/health` du Space affiche la nouvelle version.
@@ -91,9 +91,9 @@ Le modèle actuellement en production a vu 100 % des données étiquetées. Le c
 | Tests existants verts, couverture identique partout | 47 tests verts ; API couverte à 96 % (CI). README corrigé (98 % → 96 %) ; portfolio et rapport encore à aligner | Partiel |
 
 - **La sortie est-elle bonne ?** Oui. Les chiffres obtenus sur GitHub Actions sont identiques au dix-millième près à ceux calculés en local (graine fixe) : mois 3, challenger 0,5616 contre 0,557 (non promu) ; mois 4, 0,6816 contre 0,7418 (promu).
-- **Est-ce que ça fait sens ? Pourquoi ?** Le mois 3 rend la clientèle plus risquée sans rendre le modèle faux : réentraîner n'apporte rien et la règle refuse, à juste titre. Le mois 4 change la relation entre variables et défaut : seul le coût métier le voit (0 % de dérive des données), et un modèle qui apprend le nouveau régime fait nettement mieux (-8,1 % ; intervalle de confiance à 90 % mesuré en exploration : [-11,6 % ; -4,2 %]). La v4 gagne aussi sur le passé (AUC 0,782 contre 0,778 sur le test figé), ce qu'explique son entraînement sur 27 % de données en plus.
+- **Est-ce que ça fait sens ? Pourquoi ?** Le mois 3 rend la clientèle plus risquée sans rendre le modèle faux : réentraîner n'apporte rien et la règle refuse, à juste titre. Le mois 4 change la relation entre variables et défaut : seul le coût métier le voit (0 % de dérive des données), et un modèle qui apprend le nouveau régime fait nettement mieux (-8,1 % ; intervalle de confiance à 90 % mesuré en exploration : [-11,6 % ; -4,2 %]). La v4 gagne aussi sur le passé (AUC 0,782 contre 0,778 sur le test figé) : elle a appris sur 27 % de données en plus.
 - **Points douteux / limites** :
-  - Paramètres de simulation ajustés après essai : dérive du mois 3 renforcée (30 % de variables, pile au seuil, puis 35 %) ; choc du mois 4 porté de 8 % à 15 %, car à 8 % le gain du challenger restait dans le bruit. Choix documentés, pas cachés.
+  - Paramètres de simulation ajustés après essai : dérive du mois 3 renforcée (30 % de variables, pile au seuil, puis 35 %) ; choc du mois 4 porté de 8 % à 15 %, car à 8 % le gain du challenger restait dans le bruit. Le rapport de conduite de projet explique aussi ces deux ajustements.
   - Marge de promotion de 1 % petite face au bruit d'un mois (quelques milliers de demandes) : elle ne protège pas d'un gain dû au hasard.
   - Les défauts d'un lot sont supposés connus au moment de la surveillance ; dans une banque, ils arrivent des mois après l'octroi.
   - La dérive est mesurée par rapport à la population d'origine, même après une promotion.
